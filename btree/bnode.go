@@ -229,6 +229,13 @@ func nodeAppendKV(
 // split a bigger-than-allowed node into two
 // the right node always fits on a page
 func splitSingleNode(left BNode, right BNode, old BNode) {
+	// simple example
+	// nKeys := uint16(old.getNumberOfKeys())
+	// left.setHeaders(old.getNodeType(), nKeys/2)
+	// bnodeAppendRange(left, old, 0, 0, nKeys/2)
+	// bnodeAppendRange(right, old, 0, (nKeys/2)+1, nKeys)
+
+	// this method fills up the right node as much as it can
 	nkeys := old.nkeys()
 	totalBytes := old.nbytes()
 	idx := uint16(0)
@@ -282,4 +289,14 @@ func nodeMerge(new BNode, left BNode, right BNode) {
 	new.setHeader(left.btype(), left.nkeys()+right.nkeys())
 	nodeAppendRange(new, left, 0, 0, left.nkeys())
 	nodeAppendRange(new, right, left.nkeys(), 0, right.nkeys())
+}
+
+// replace 2 adjacent links with 1
+func nodeReplace2Kid(
+	new BNode, old BNode, idx uint16, ptr uint64, key []byte,
+) {
+	new.setHeader(BNODE_NODE, old.nkeys()-1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendKV(new, idx, ptr, key, nil)
+	nodeAppendRange(new, old, idx+1, idx+2, old.nkeys()-idx-2)
 }
