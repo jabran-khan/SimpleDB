@@ -119,8 +119,8 @@ func nodeDelete(tree *BTree, node BNode, idx uint16, key []byte) BNode {
 // 1. node is smaller than 1/4 of a page
 // 2. has sibling and merged result does not exceed one page
 func shouldMerge(
-	tree *BTree, node BNode, idx uint16, update BNode
-) (int, BNode)  {
+	tree *BTree, node BNode, idx uint16, updated BNode,
+) (int, BNode) {
 	if updated.nbytes() > BTREE_PAGE_SIZE/4 {
 		return 0, BNode{}
 	}
