@@ -164,10 +164,17 @@ func leafInsert(
 func leafUpdate(
 	new BNode, old BNode, idx uint16, key []byte, val []byte,
 ) {
-	new.setHeader(BNODE_LEAF, old.nkeys()) // different from leafInsert
+	new.setHeader(BNODE_LEAF, old.nkeys())
 	nodeAppendRange(new, old, 0, 0, idx)
 	nodeAppendKV(new, idx, 0, key, val)
-	nodeAppendRange(new, old, idx+1, idx+1, old.nkeys()-idx-1) // different from leafInsert
+	nodeAppendRange(new, old, idx+1, idx+1, old.nkeys()-idx-1)
+}
+
+// remove a key from a leaf node
+func leafDelete(new BNode, old BNode, idx uint16) {
+	new.setHeader(BNODE_LEAF, old.nkeys()-1)
+	nodeAppendRange(new, old, 0, 0, idx)
+	nodeAppendRange(new, old, idx, idx+1, old.nkeys()-idx+1)
 }
 
 // copy KVs into the position
@@ -268,4 +275,11 @@ func splitNode(old BNode) (uint16, [3]BNode) {
 		panic("leftleft page size is still larger than page size")
 	}
 	return 3, [3]BNode{leftleft, middle, right}
+}
+
+// merge 2 nodes into 1
+func nodeMerge(new BNode, left BNode, right BNode) {
+	new.setHeader(left.btype(), left.nkeys()+right.nkeys())
+	nodeAppendRange(new, left, 0, 0, left.nkeys())
+	nodeAppendRange(new, right, left.nkeys(), 0, right.nkeys())
 }
