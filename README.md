@@ -1,2 +1,2 @@
-# SimpleDB
-Simple Database implementation written in Go
+# TreeVaultDB
+A persistent key-value store database utilizing an immutable B-tree implementation
