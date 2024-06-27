@@ -1,9 +1,6 @@
 package database
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -29,27 +26,14 @@ type KeyValue struct {
 	}
 }
 
-// extend the mmap by adding new mappings
-func extendMmap(db *KeyValue, npages int) error {
-	if db.mmap.total >= npages*BTREE_PAGE_SIZE {
-		return nil
+// callback for Btree, allocate a new page
+func (db *KeyValue) pageNew(node BNode) uint64 {
+	if len(node.data) > BTREE_PAGE_SIZE {
+		panic("pageNew: node is larger than page size")
 	}
-
-	// double check the address space
-	chunk, err := syscall.Mmap(
-		int(db.fp.Fd()),
-		int64(db.mmap.total),
-		db.mmap.total,
-		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_SHARED,
-	)
-	if err != nil {
-		return fmt.Errorf("mmap: %w", err)
-	}
-
-	db.mmap.total += db.mmap.total
-	db.mmap.chunks = append(db.mmap.chunks, chunk)
-	return nil
+	ptr := db.page.flushed + uint64(len(db.page.temp))
+	db.page.temp = append(db.page.temp, node.data)
+	return ptr
 }
 
 // callback for BTree, dereference a pointer
@@ -66,45 +50,70 @@ func (db *KeyValue) pageGet(ptr uint64) BNode {
 	panic("pageGet: bad ptr")
 }
 
-// the master page format.
-// it contains the pointer to the root and other important bits.
-// | sig | btree_root | page_used |
-// | 16B |     8B     |     8B    |
-func masterLoad(db *KeyValue) error {
-	if db.mmap.file == 0 {
-		// empty file, the master page will be created on the first write
-		db.page.flushed = 1 // reserved for the master page
-		return nil
-	}
-
-	data := db.mmap.chunks[0]
-	root := binary.LittleEndian.Uint64(data[16:])
-	used := binary.LittleEndian.Uint64(data[24:])
-
-	// verify the page
-	if !bytes.Equal([]byte(DB_SIG), data[:16]) {
-		return errors.New("Bad Signature")
-	}
-	bad := !(1 <= used && used <= uint64(db.mmap.file/BTREE_PAGE_SIZE))
-	bad = bad || !(0 <= root && root < used)
-	if bad {
-		return errors.New("Bad master page")
-	}
-
-	db.tree.root = root
-	db.page.flushed = used
-	return nil
+// callback for Btree, deallocate a page
+func (db *KeyValue) pageDel(uint64) {
+	// TODO: complete
 }
 
-// update the master page. it must be atomic
-func masterStore(db *KeyValue) error {
-	var data [32]byte
-	copy(data[:16], []byte(DB_SIG))
-	binary.LittleEndian.PutUint64(data[16:], db.tree.root)
-	binary.LittleEndian.PutUint64(data[24:], db.page.flushed)
-	_, err := db.fp.WriteAt(data[:], 0) // writes via mmap are not atomic
+func (db *KeyValue) Open() error {
+	// open or create the DB file
+	fp, err := os.OpenFile(db.Path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return fmt.Errorf("write master page: %w", err)
+		return fmt.Errorf("OpenFile: %w", err)
 	}
+	db.fp = fp
+
+	// create the initial mmap
+	sz, chunk, err := mmapInit(db.fp)
+	if err != nil {
+		goto fail
+	}
+	db.mmap.file = sz
+	db.mmap.total = len(chunk)
+	db.mmap.chunks = [][]byte{chunk}
+
+	// btree callbacks
+	db.tree.get = db.pageGet
+	db.tree.new = db.pageNew
+	db.tree.del = db.pageDel
+
+	// read the master page
+	err = masterLoad(db)
+	if err != nil {
+		goto fail
+	}
+	// done
 	return nil
+
+fail:
+	db.Close()
+	return fmt.Errorf("KV.Open: %w", err)
+}
+
+// cleanup
+func (db *KeyValue) Close() {
+	for _, chunk := range db.mmap.chunks {
+		err := syscall.Munmap(chunk)
+		if err != nil {
+			panic("Close: couldn't delete mappings for specified chunk")
+		}
+	}
+	_ = db.fp.Close()
+}
+
+// read the db
+func (db *KeyValue) Get(key []byte) ([]byte, bool) {
+	return db.tree.Get(key)
+}
+
+// update the db
+func (db *KeyValue) Set(key []byte, val []byte) error {
+	db.tree.Insert(key, val)
+	return flushPages(db)
+}
+
+// delete from the db
+func (db *KeyValue) Del(key []byte) (bool, error) {
+	deleted := db.tree.Delete(key)
+	return deleted, flushPages(db)
 }

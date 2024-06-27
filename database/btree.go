@@ -1,12 +1,31 @@
 package database
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
 
 type BTree struct {
 	root uint64             // pointer to a page on disk
 	get  func(uint64) BNode // dereferencing a pointer
 	new  func(BNode) uint64 // allocate a new page
 	del  func(uint64)       // deallocate a page
+}
+
+func (tree *BTree) Get(key []byte) ([]byte, bool) {
+	if len(key) == 0 {
+		panic("Get: key is empty")
+	}
+	if len(key) > BTREE_MAX_KEY_SIZE {
+		panic(fmt.Sprintf("Get: key size {%v} exceeded", key))
+	}
+
+	node := treeGet(tree, tree.get(tree.root), key)
+	if node.data == nil {
+		return nil, false
+	}
+
+	return node.getVal(nodeLookupLE(node, key)), true
 }
 
 func (tree *BTree) Delete(key []byte) bool {
@@ -208,4 +227,24 @@ func shouldMerge(
 		}
 	}
 	return 0, BNode{}
+}
+
+func treeGet(tree *BTree, node BNode, key []byte) BNode {
+	idx := nodeLookupLE(node, key)
+
+	switch node.btype() {
+	case BNODE_LEAF:
+		if !bytes.Equal(key, node.getKey(idx)) {
+			return BNode{}
+		}
+		return node
+
+	case BNODE_NODE:
+		childPtr := node.getPtr(idx)
+		childPage := tree.get(childPtr)
+		return treeGet(tree, childPage, key)
+
+	default:
+		panic("bad node!")
+	}
 }
