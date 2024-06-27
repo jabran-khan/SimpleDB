@@ -1,4 +1,4 @@
-package btree
+package database
 
 import "unsafe"
 
@@ -33,7 +33,7 @@ func newContainer() *Container {
 			del: func(ptr uint64) {
 				_, ok := pages[ptr]
 				if !ok {
-					panic("")
+					panic("page does not exist")
 				}
 				delete(pages, ptr)
 			},
