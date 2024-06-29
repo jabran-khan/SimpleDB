@@ -26,12 +26,12 @@ func masterLoad(db *KeyValue) error {
 
 	// verify the page
 	if !bytes.Equal([]byte(DB_SIG), data[:16]) {
-		return errors.New("Bad Signature")
+		return errors.New("bad Signature")
 	}
 	bad := !(1 <= used && used <= uint64(db.mmap.file/BTREE_PAGE_SIZE))
-	bad = bad || !(0 <= root && root < used)
+	bad = bad || !(root < used)
 	if bad {
-		return errors.New("Bad master page")
+		return errors.New("bad master page")
 	}
 
 	db.tree.root = root
@@ -60,7 +60,7 @@ func mmapInit(fp *os.File) (int, []byte, error) {
 	}
 
 	if fi.Size()%BTREE_PAGE_SIZE != 0 {
-		return 0, nil, errors.New("File size is not a multiple of page size")
+		return 0, nil, errors.New("file size is not a multiple of page size")
 	}
 
 	mmapSize := 64 << 20
